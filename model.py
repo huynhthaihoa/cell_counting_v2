@@ -15,38 +15,38 @@ U-net version is also provided.
 from __future__ import absolute_import
 from __future__ import print_function
 import numpy as np
-from keras import backend as K
-from keras.models import Sequential, Model
-from keras.layers import (
+#import tensorflow as tf
+from tensorflow.compat.v1.keras import backend as K
+from tensorflow.compat.v1.keras import initializers
+from tensorflow.compat.v1.keras.models import Sequential, Model
+from tensorflow.compat.v1.keras.layers import (
     Input,
     Activation,
-    Merge,
-    merge,
+    Concatenate,
+    # Merge,
+    # merge,
     Dropout,
     Reshape,
     Permute,
     Dense,
     UpSampling2D,
-    Flatten
-    )
-from keras.optimizers import SGD, RMSprop
-from keras.layers.convolutional import (
-    Convolution2D)
-from keras.layers.pooling import (
+    Flatten,
+    Convolution2D,
     MaxPooling2D,
-    AveragePooling2D
+    AveragePooling2D,
+    BatchNormalization
     )
-from keras.layers.normalization import BatchNormalization
-from keras.regularizers import l2
+from tensorflow.compat.v1.keras.optimizers import SGD, RMSprop
+from tensorflow.compat.v1.keras.regularizers import l2
 
 weight_decay = 1e-5
-K.set_image_dim_ordering('tf')
+K.set_image_data_format('channels_last')
 
 def _conv_bn_relu(nb_filter, row, col, subsample = (1,1)):
     def f(input):
-        conv_a = Convolution2D(nb_filter, row, col, subsample = subsample,
-                               init = 'orthogonal', 
-                               border_mode='same', bias = False)(input)
+        conv_a = Convolution2D(filters=nb_filter, kernel_size=(row, col), strides = subsample,
+                               kernel_initializer = initializers.Orthogonal(), 
+                               padding='same', use_bias = False)(input)
         norm_a = BatchNormalization()(conv_a)
         act_a = Activation(activation = 'relu')(norm_a)
         return act_a
@@ -54,16 +54,16 @@ def _conv_bn_relu(nb_filter, row, col, subsample = (1,1)):
     
 def _conv_bn_relu_x2(nb_filter, row, col, subsample = (1,1)):
     def f(input):
-        conv_a = Convolution2D(nb_filter, row, col, subsample = subsample,
-                               init = 'orthogonal', border_mode = 'same',bias = False,
-                               W_regularizer = l2(weight_decay),
-                               b_regularizer = l2(weight_decay))(input)
+        conv_a = Convolution2D(filters=nb_filter, kernel_size=(row, col), strides = subsample,
+                               kernel_initializer = initializers.Orthogonal(), padding = 'same', use_bias = False,
+                               kernel_regularizer = l2(weight_decay),
+                               bias_regularizer = l2(weight_decay))(input)
         norm_a = BatchNormalization()(conv_a)
         act_a = Activation(activation = 'relu')(norm_a)
-        conv_b = Convolution2D(nb_filter, row, col, subsample = subsample,
-                               init = 'orthogonal', border_mode = 'same',bias = False,
-                               W_regularizer = l2(weight_decay),
-                               b_regularizer = l2(weight_decay))(act_a)
+        conv_b = Convolution2D(filters=nb_filter, kernel_size=(row, col), strides = subsample,
+                               kernel_initializer = initializers.Orthogonal(), padding = 'same', use_bias = False,
+                               kernel_regularizer = l2(weight_decay),
+                               bias_regularizer = l2(weight_decay))(act_a)
         norm_b = BatchNormalization()(conv_b)
         act_b = Activation(activation = 'relu')(norm_b)
         return act_b
@@ -124,13 +124,16 @@ def U_net_base(input, nb_filter = 64):
     pool3 = MaxPooling2D(pool_size=(2, 2))(block3)
     # =========================================================================
     block4 = _conv_bn_relu_x2(nb_filter,3,3)(pool3)
-    up4 = merge([UpSampling2D(size=(2, 2))(block4), block3], mode='concat', concat_axis=-1)
+    up4 = Concatenate(axis=-1)([UpSampling2D(size=(2, 2))(block4), block3])
+    #up4 = merge([UpSampling2D(size=(2, 2))(block4), block3], mode='concat', concat_axis=-1)
     # =========================================================================
     block5 = _conv_bn_relu_x2(nb_filter,3,3)(up4)
-    up5 = merge([UpSampling2D(size=(2, 2))(block5), block2], mode='concat', concat_axis=-1)
+    up5 = Concatenate(axis=-1)([UpSampling2D(size=(2, 2))(block5), block2])
+    #up5 = merge([UpSampling2D(size=(2, 2))(block5), block2], mode='concat', concat_axis=-1)
     # =========================================================================
     block6 = _conv_bn_relu_x2(nb_filter,3,3)(up5)
-    up6 = merge([UpSampling2D(size=(2, 2))(block6), block1], mode='concat', concat_axis=-1)
+    up6 = Concatenate(axis=-1)([UpSampling2D(size=(2, 2))(block6), block1])
+    #up6 = merge([UpSampling2D(size=(2, 2))(block6), block1], mode='concat', concat_axis=-1)
     # =========================================================================
     block7 = _conv_bn_relu(nb_filter,3,3)(up6)
     return block7
@@ -166,10 +169,10 @@ def buildModel_U_net (input_dim):
     # =========================================================================
     act_ = U_net_base (input_, nb_filter = 64 )
     # =========================================================================
-    density_pred =  Convolution2D(1, 1, 1, bias = False, activation='linear',\
-                                  init='orthogonal',name='pred',border_mode='same')(act_)
+    density_pred =  Convolution2D(filters=1, kernel_size=(1, 1), use_bias = False, activation='linear',\
+                                  kernel_initializer = initializers.Orthogonal(), padding='same')(act_)
     # =========================================================================
-    model = Model (input = input_, output = density_pred)
+    model = Model(inputs=input_, outputs=density_pred)
     opt = RMSprop(1e-3)
     model.compile(optimizer = opt, loss = 'mse')
     return model
