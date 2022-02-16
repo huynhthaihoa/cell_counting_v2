@@ -148,7 +148,8 @@ class ImageDataGenerator(object):
                  rescale=None,
                  dim_ordering='default'):
         if dim_ordering == 'default':
-            dim_ordering = K.image_dim_ordering()
+            dim_ordering = K.image_data_format()
+            #dim_ordering = K.image_dim_ordering()
         self.__dict__.update(locals())
         self.mean = None
         self.std = None
